@@ -542,6 +542,17 @@ parse_tc_flower_to_match(struct tc_flower *flower,
         if (flower->tunnel.tp_dst) {
             match_set_tun_tp_dst(match, flower->tunnel.tp_dst);
         }
+        memcpy(match->flow.tunnel.metadata.opts.gnv,
+               flower->tunnel.metadata.opts.gnv,
+               flower->tunnel.metadata.present.len);
+        match->flow.tunnel.metadata.present.len =
+               flower->tunnel.metadata.present.len;
+        match->flow.tunnel.flags |= FLOW_TNL_F_UDPIF;
+        memset(match->wc.masks.tunnel.metadata.opts.gnv, 0xff,
+               flower->tunnel.metadata.present.len);
+        match->wc.masks.tunnel.metadata.present.len =
+               flower->tunnel.metadata.present.len;
+        match->wc.masks.tunnel.flags |= FLOW_TNL_F_UDPIF;
     }
 
     act_off = nl_msg_start_nested(buf, OVS_FLOW_ATTR_ACTIONS);
@@ -1003,6 +1014,9 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         flower.tunnel.ttl = tnl->ip_ttl;
         flower.tunnel.tp_src = tnl->tp_src;
         flower.tunnel.tp_dst = tnl->tp_dst;
+        memcpy(flower.tunnel.metadata.opts.gnv, tnl->metadata.opts.gnv,
+               tnl->metadata.present.len);
+        flower.tunnel.metadata.present.len = tnl->metadata.present.len;
         flower.tunnel.tunnel = true;
     }
     memset(&mask->tunnel, 0, sizeof mask->tunnel);

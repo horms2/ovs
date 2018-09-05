@@ -190,6 +190,7 @@ struct tc_flower {
         ovs_be16 tp_src;
         ovs_be16 tp_dst;
         ovs_be64 id;
+        struct tun_metadata metadata;
     } tunnel;
 
     struct tc_cookie act_cookie;
