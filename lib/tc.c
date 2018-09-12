@@ -325,6 +325,9 @@ static const struct nl_policy tca_flower_policy[] = {
                                     .optional = true, },
     [TCA_FLOWER_KEY_ENC_IP_TTL_MASK] = { .type = NL_A_U8,
                                          .optional = true, },
+    [TCA_FLOWER_KEY_ENC_OPTS] = { .type = NL_A_NESTED, .optional = true, },
+    [TCA_FLOWER_KEY_ENC_OPTS_MASK] = { .type = NL_A_NESTED,
+                                       .optional = true, },
 };
 
 static void
@@ -432,6 +435,66 @@ nl_parse_flower_vlan(struct nlattr **attrs, struct tc_flower *flower)
 }
 
 static void
+nl_parse_geneve_key(const struct nlattr *in_nlattr,
+                    struct tun_metadata *metadata)
+{
+    struct geneve_opt *opt = NULL;
+    const struct ofpbuf *msg;
+    struct nlattr *nla;
+    struct ofpbuf buf;
+    size_t left;
+    int cnt;
+
+    nl_attr_get_nested(in_nlattr, &buf);
+    msg = &buf;
+
+    cnt = 0;
+    NL_ATTR_FOR_EACH (nla, left, ofpbuf_at(msg, 0, 0), msg->size) {
+        uint16_t type = nl_attr_type(nla);
+
+        switch (type) {
+        case TCA_FLOWER_KEY_ENC_OPT_GENEVE_CLASS:
+            opt = &metadata->opts.gnv[cnt];
+            opt->opt_class = nl_attr_get_be16(nla);
+            cnt += sizeof(struct geneve_opt) / 4;
+            metadata->present.len += sizeof(struct geneve_opt);
+            break;
+        case TCA_FLOWER_KEY_ENC_OPT_GENEVE_TYPE:
+            opt->type = nl_attr_get_u8(nla);
+            break;
+        case TCA_FLOWER_KEY_ENC_OPT_GENEVE_DATA:
+            opt->length = nl_attr_get_size(nla) / 4;
+            memcpy(opt + 1, nl_attr_get_unspec(nla, 1), opt->length * 4);
+            cnt += opt->length;
+            metadata->present.len += opt->length * 4;
+            break;
+        }
+    }
+}
+
+static void
+nl_parse_flower_tunnel_opts(struct nlattr *options,
+                            struct tun_metadata *metadata)
+{
+    const struct ofpbuf *msg;
+    struct nlattr *nla;
+    struct ofpbuf buf;
+    size_t left;
+
+    nl_attr_get_nested(options, &buf);
+    msg = &buf;
+
+    NL_ATTR_FOR_EACH (nla, left, ofpbuf_at(msg, 0, 0), msg->size) {
+        uint16_t type = nl_attr_type(nla);
+        switch (type) {
+        case TCA_FLOWER_KEY_ENC_OPTS_GENEVE:
+            nl_parse_geneve_key(nla, metadata);
+            break;
+        }
+    }
+}
+
+static void
 nl_parse_flower_tunnel(struct nlattr **attrs, struct tc_flower *flower)
 {
     if (attrs[TCA_FLOWER_KEY_ENC_KEY_ID]) {
@@ -470,6 +533,12 @@ nl_parse_flower_tunnel(struct nlattr **attrs, struct tc_flower *flower)
             nl_attr_get_u8(attrs[TCA_FLOWER_KEY_ENC_IP_TTL]);
         flower->mask.tunnel.ttl =
             nl_attr_get_u8(attrs[TCA_FLOWER_KEY_ENC_IP_TTL_MASK]);
+    }
+    if (attrs[TCA_FLOWER_KEY_ENC_OPTS_MASK]) {
+         nl_parse_flower_tunnel_opts(attrs[TCA_FLOWER_KEY_ENC_OPTS],
+                                     &flower->key.tunnel.metadata);
+         nl_parse_flower_tunnel_opts(attrs[TCA_FLOWER_KEY_ENC_OPTS_MASK],
+                                     &flower->mask.tunnel.metadata);
     }
 }
 
@@ -1764,6 +1833,38 @@ nl_msg_put_masked_value(struct ofpbuf *request, uint16_t type,
 }
 
 static void
+nl_msg_put_flower_tunnel_opts(struct ofpbuf *request, uint16_t type,
+                              struct tun_metadata metadata)
+{
+    struct geneve_opt *opt;
+    size_t outer, inner;
+    int len, cnt = 0;
+
+    len = metadata.present.len;
+    if (!len) {
+        return;
+    }
+
+    outer = nl_msg_start_nested(request, type);
+    while (len) {
+        opt = &metadata.opts.gnv[cnt];
+        inner = nl_msg_start_nested(request, TCA_FLOWER_KEY_ENC_OPTS_GENEVE);
+
+        nl_msg_put_be16(request, TCA_FLOWER_KEY_ENC_OPT_GENEVE_CLASS,
+                        opt->opt_class);
+        nl_msg_put_u8(request, TCA_FLOWER_KEY_ENC_OPT_GENEVE_TYPE, opt->type);
+        nl_msg_put_unspec(request, TCA_FLOWER_KEY_ENC_OPT_GENEVE_DATA, opt + 1,
+                          opt->length * 4);
+
+        cnt += sizeof(struct geneve_opt) / 4 + opt->length;
+        len -= sizeof(struct geneve_opt) + opt->length * 4;
+
+        nl_msg_end_nested(request, inner);
+    }
+    nl_msg_end_nested(request, outer);
+}
+
+static void
 nl_msg_put_flower_tunnel(struct ofpbuf *request, struct tc_flower *flower)
 {
     ovs_be32 ipv4_src = flower->key.tunnel.ipv4.ipv4_src;
@@ -1794,6 +1895,10 @@ nl_msg_put_flower_tunnel(struct ofpbuf *request, struct tc_flower *flower)
     }
     nl_msg_put_be16(request, TCA_FLOWER_KEY_ENC_UDP_DST_PORT, tp_dst);
     nl_msg_put_be32(request, TCA_FLOWER_KEY_ENC_KEY_ID, id);
+    nl_msg_put_flower_tunnel_opts(request, TCA_FLOWER_KEY_ENC_OPTS,
+                                  flower->key.tunnel.metadata);
+    nl_msg_put_flower_tunnel_opts(request, TCA_FLOWER_KEY_ENC_OPTS_MASK,
+                                  flower->mask.tunnel.metadata);
 }
 
 #define FLOWER_PUT_MASKED_VALUE(member, type) \
