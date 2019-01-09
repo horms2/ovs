@@ -116,6 +116,24 @@ bytes_to_be32(uint8_t b0, uint8_t b1, uint8_t b2, uint8_t b3)
     return (OVS_FORCE ovs_be32) x;
 }
 
+/* These functions specifically help shifting words in network
+ * byte order, given that they are specified in host order. */
+static inline uint32_t
+shift_ovs_be32_left(uint32_t word, int shift)
+{
+        uint32_t word_shifted = (OVS_FORCE uint32_t)htonl(word) << shift;
+
+        return ntohl((OVS_FORCE ovs_be32)word_shifted);
+}
+
+static inline uint32_t
+shift_ovs_be32_right(uint32_t word, int shift)
+{
+        uint32_t word_shifted = (OVS_FORCE uint32_t)htonl(word) >> shift;
+
+        return ntohl((OVS_FORCE ovs_be32)word_shifted);
+}
+
 /* These functions zero-extend big-endian values to longer ones,
  * or truncate long big-endian value to shorter ones. */
 #ifndef __CHECKER__
