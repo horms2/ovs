@@ -1419,6 +1419,10 @@ parse_netlink_to_tc_flower(struct ofpbuf *reply, struct tc_flower *flower)
     flower->mask.eth_type = OVS_BE16_MAX;
     flower->prio = tc_get_major(tc->tcm_info);
 
+    if (flower->prio == TC_RESERVED_PRIORITY_POLICE) {
+        return 0;
+    }
+
     if (!flower->handle) {
         return EAGAIN;
     }
