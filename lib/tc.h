@@ -36,8 +36,12 @@
 #ifndef TC_H_MIN_INGRESS
 #define TC_H_MIN_INGRESS       0xFFF2U
 #endif
+#ifndef TC_H_MIN_EGRESS
+#define TC_H_MIN_EGRESS       0xFFF3U
+#endif
 
 #define TC_INGRESS_PARENT TC_H_MAKE(TC_H_CLSACT, TC_H_MIN_INGRESS)
+#define TC_EGRESS_PARENT TC_H_MAKE(TC_H_CLSACT, TC_H_MIN_EGRESS)
 
 #define TC_POLICY_DEFAULT "none"
 
@@ -72,7 +76,7 @@ tc_get_minor(unsigned int handle)
 struct tcmsg *tc_make_request(int ifindex, int type,
                               unsigned int flags, struct ofpbuf *);
 int tc_transact(struct ofpbuf *request, struct ofpbuf **replyp);
-int tc_add_del_ingress_qdisc(int ifindex, bool add, uint32_t block_id);
+int tc_add_del_qdisc(int ifindex, bool add, uint32_t block_id, bool egress);
 
 struct tc_cookie {
     const void *data;
@@ -225,12 +229,15 @@ BUILD_ASSERT_DECL(offsetof(struct tc_flower, rewrite)
                   + sizeof(uint32_t) - 2 < sizeof(struct tc_flower));
 
 int tc_replace_flower(int ifindex, uint16_t prio, uint32_t handle,
-                      struct tc_flower *flower, uint32_t block_id);
-int tc_del_filter(int ifindex, int prio, int handle, uint32_t block_id);
+                      struct tc_flower *flower, uint32_t block_id,
+                      bool egress);
+int tc_del_filter(int ifindex, int prio, int handle, uint32_t block_id,
+                  bool egress);
 int tc_get_flower(int ifindex, int prio, int handle,
-                  struct tc_flower *flower, uint32_t block_id);
-int tc_flush(int ifindex, uint32_t block_id);
-int tc_dump_flower_start(int ifindex, struct nl_dump *dump, uint32_t block_id);
+                  struct tc_flower *flower, uint32_t block_id, bool egress);
+int tc_flush(int ifindex, uint32_t block_id, bool egress);
+int tc_dump_flower_start(int ifindex, struct nl_dump *dump, uint32_t block_id,
+                         bool egress);
 int parse_netlink_to_tc_flower(struct ofpbuf *reply,
                                struct tc_flower *flower);
 void tc_set_policy(const char *policy);

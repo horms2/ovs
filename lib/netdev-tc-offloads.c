@@ -189,7 +189,7 @@ del_filter_and_ufid_mapping(int ifindex, int prio, int handle,
 {
     int err;
 
-    err = tc_del_filter(ifindex, prio, handle, block_id);
+    err = tc_del_filter(ifindex, prio, handle, block_id, false);
     del_ufid_tc_mapping(ufid);
 
     return err;
@@ -357,7 +357,7 @@ netdev_tc_flow_flush(struct netdev *netdev)
 
     block_id = get_block_id_from_netdev(netdev);
 
-    return tc_flush(ifindex, block_id);
+    return tc_flush(ifindex, block_id, false);
 }
 
 int
@@ -379,7 +379,7 @@ netdev_tc_flow_dump_create(struct netdev *netdev,
     dump = xzalloc(sizeof *dump);
     dump->nl_dump = xzalloc(sizeof *dump->nl_dump);
     dump->netdev = netdev_ref(netdev);
-    tc_dump_flower_start(ifindex, dump->nl_dump, block_id);
+    tc_dump_flower_start(ifindex, dump->nl_dump, block_id, false);
 
     *dump_out = dump;
 
@@ -1356,7 +1356,7 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     flower.act_cookie.data = ufid;
     flower.act_cookie.len = sizeof *ufid;
 
-    err = tc_replace_flower(ifindex, prio, handle, &flower, block_id);
+    err = tc_replace_flower(ifindex, prio, handle, &flower, block_id, false);
     if (!err) {
         add_ufid_tc_mapping(ufid, flower.prio, flower.handle, netdev, ifindex);
     }
@@ -1399,7 +1399,7 @@ netdev_tc_flow_get(struct netdev *netdev OVS_UNUSED,
     block_id = get_block_id_from_netdev(dev);
     VLOG_DBG_RL(&rl, "flow get (dev %s prio %d handle %d block_id %d)",
                 netdev_get_name(dev), prio, handle, block_id);
-    err = tc_get_flower(ifindex, prio, handle, &flower, block_id);
+    err = tc_get_flower(ifindex, prio, handle, &flower, block_id, false);
     netdev_close(dev);
     if (err) {
         VLOG_ERR_RL(&error_rl, "flow get failed (dev %s prio %d handle %d): %s",
@@ -1446,7 +1446,7 @@ netdev_tc_flow_del(struct netdev *netdev OVS_UNUSED,
 
     if (stats) {
         memset(stats, 0, sizeof *stats);
-        if (!tc_get_flower(ifindex, prio, handle, &flower, block_id)) {
+        if (!tc_get_flower(ifindex, prio, handle, &flower, block_id, false)) {
             stats->n_packets = get_32aligned_u64(&flower.stats.n_packets);
             stats->n_bytes = get_32aligned_u64(&flower.stats.n_bytes);
             stats->used = flower.lastused;
@@ -1467,7 +1467,7 @@ probe_multi_mask_per_prio(int ifindex)
     int block_id = 0;
     int error;
 
-    error = tc_add_del_ingress_qdisc(ifindex, true, block_id);
+    error = tc_add_del_qdisc(ifindex, true, block_id, false);
     if (error) {
         return;
     }
@@ -1479,7 +1479,7 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.key.dst_mac, 0x11, sizeof flower.key.dst_mac);
     memset(&flower.mask.dst_mac, 0xff, sizeof flower.mask.dst_mac);
 
-    error = tc_replace_flower(ifindex, 1, 1, &flower, block_id);
+    error = tc_replace_flower(ifindex, 1, 1, &flower, block_id, false);
     if (error) {
         goto out;
     }
@@ -1487,20 +1487,20 @@ probe_multi_mask_per_prio(int ifindex)
     memset(&flower.key.src_mac, 0x11, sizeof flower.key.src_mac);
     memset(&flower.mask.src_mac, 0xff, sizeof flower.mask.src_mac);
 
-    error = tc_replace_flower(ifindex, 1, 2, &flower, block_id);
-    tc_del_filter(ifindex, 1, 1, block_id);
+    error = tc_replace_flower(ifindex, 1, 2, &flower, block_id, false);
+    tc_del_filter(ifindex, 1, 1, block_id, false);
 
     if (error) {
         goto out;
     }
 
-    tc_del_filter(ifindex, 1, 2, block_id);
+    tc_del_filter(ifindex, 1, 2, block_id, false);
 
     multi_mask_per_prio = true;
     VLOG_INFO("probe tc: multiple masks on single tc prio is supported.");
 
 out:
-    tc_add_del_ingress_qdisc(ifindex, false, block_id);
+    tc_add_del_qdisc(ifindex, false, block_id, false);
 }
 
 static void
@@ -1509,12 +1509,12 @@ probe_tc_block_support(int ifindex)
     uint32_t block_id = 1;
     int error;
 
-    error = tc_add_del_ingress_qdisc(ifindex, true, block_id);
+    error = tc_add_del_qdisc(ifindex, true, block_id, false);
     if (error) {
         return;
     }
 
-    tc_add_del_ingress_qdisc(ifindex, false, block_id);
+    tc_add_del_qdisc(ifindex, false, block_id, false);
 
     block_support = true;
     VLOG_INFO("probe tc: block offload is supported.");
@@ -1537,7 +1537,7 @@ netdev_tc_init_flow_api(struct netdev *netdev)
     }
 
     /* make sure there is no ingress qdisc */
-    tc_add_del_ingress_qdisc(ifindex, false, 0);
+    tc_add_del_qdisc(ifindex, false, 0, false);
 
     if (ovsthread_once_start(&block_once)) {
         probe_tc_block_support(ifindex);
@@ -1550,7 +1550,7 @@ netdev_tc_init_flow_api(struct netdev *netdev)
     }
 
     block_id = get_block_id_from_netdev(netdev);
-    error = tc_add_del_ingress_qdisc(ifindex, true, block_id);
+    error = tc_add_del_qdisc(ifindex, true, block_id, false);
 
     if (error && error != EEXIST) {
         VLOG_ERR("failed adding ingress qdisc required for offloading: %s",
