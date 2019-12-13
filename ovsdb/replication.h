@@ -44,8 +44,10 @@ struct ovsdb;
  *    used mainly by uinxctl commands.
  */
 
+#define REPLICATION_DEFAULT_PROBE_INTERVAL 60000
+
 void replication_init(const char *sync_from, const char *exclude_tables,
-                      const struct uuid *server);
+                      const struct uuid *server, int probe_interval);
 void replication_run(void);
 void replication_wait(void);
 void replication_destroy(void);
