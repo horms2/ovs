@@ -110,6 +110,8 @@ static int dpif_netlink_dp_transact(const struct dpif_netlink_dp *request,
 static int dpif_netlink_dp_get(const struct dpif *,
                                struct dpif_netlink_dp *reply,
                                struct ofpbuf **bufp);
+static int
+dpif_netlink_set_features(struct dpif *dpif_, uint32_t new_features);
 
 struct dpif_netlink_flow {
     /* Generic Netlink header. */
@@ -363,7 +365,9 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
     }
 
     error = open_dpif(&dp, dpifp);
+    dpif_netlink_set_features(*dpifp, OVS_DP_F_TC_RECIRC_SHARING);
     ofpbuf_delete(buf);
+
     return error;
 }
 
@@ -1638,6 +1642,7 @@ dpif_netlink_netdev_match_to_dpif_flow(struct match *match,
         .mask = &match->wc.masks,
         .support = {
             .max_vlan_headers = 2,
+            .recirc = true,
         },
     };
     size_t offset;
@@ -2037,6 +2042,7 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
     struct offload_info info;
     ovs_be16 dst_port = 0;
     uint8_t csum_on = false;
+    bool recirc_act;
     int err;
 
     if (put->flags & DPIF_FP_PROBE) {
@@ -2076,7 +2082,15 @@ parse_flow_put(struct dpif_netlink *dpif, struct dpif_flow_put *put)
                 csum_on = tnl_cfg->csum;
             }
             netdev_close(outdev);
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_RECIRC) {
+            recirc_act = true;
         }
+    }
+
+    if ((recirc_act || match.flow.recirc_id)
+        && !(dpif->user_features & OVS_DP_F_TC_RECIRC_SHARING)) {
+        err = EOPNOTSUPP;
+        goto out;
     }
 
     info.dpif_class = dpif_class;
