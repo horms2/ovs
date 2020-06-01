@@ -2576,6 +2576,18 @@ udpif_update_flow_pps(struct udpif *udpif, struct udpif_key *ukey,
     ukey->flow_time = udpif->dpif->current_ms;
 }
 
+static long long int
+udpif_update_used(struct udpif *udpif, struct udpif_key *ukey,
+                  struct dpif_flow_stats *stats)
+{
+    if (udpif->dump->terse) {
+        stats->used = stats->n_packets > ukey->stats.n_packets ?
+                      udpif->dpif->current_ms : ukey->stats.used;
+        return stats->used;
+    }
+    return ukey->created;
+}
+
 static void
 revalidate(struct revalidator *revalidator)
 {
@@ -2631,6 +2643,7 @@ revalidate(struct revalidator *revalidator)
         for (f = flows; f < &flows[n_dumped]; f++) {
             long long int used = f->stats.used;
             struct recirc_refs recircs = RECIRC_REFS_EMPTY_INITIALIZER;
+            struct dpif_flow_stats stats = f->stats;
             enum reval_result result;
             struct udpif_key *ukey;
             bool already_dumped;
@@ -2675,12 +2688,12 @@ revalidate(struct revalidator *revalidator)
             }
 
             if (!used) {
-                used = ukey->created;
+                used = udpif_update_used(udpif, ukey, &stats);
             }
             if (kill_them_all || (used && used < now - max_idle)) {
                 result = UKEY_DELETE;
             } else {
-                result = revalidate_ukey(udpif, ukey, &f->stats, &odp_actions,
+                result = revalidate_ukey(udpif, ukey, &stats, &odp_actions,
                                          reval_seq, &recircs,
                                          f->attrs.offloaded);
             }
