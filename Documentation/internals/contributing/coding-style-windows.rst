@@ -38,7 +38,7 @@ kernel/driver code.  They are noted as follows:
 Basics
 ------
 
-- Limit lines to 79 characters.
+- Limit lines to 100 characters.
 
   Many times, this is not possible due to long names of functions and it is
   fine to go beyond the characters limit.  One common example is when calling

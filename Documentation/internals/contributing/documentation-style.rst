@@ -64,7 +64,7 @@ Many of the basic documentation guidelines match those of the
   Sphinx extensions can be used, but only for documentation in the
   ``Documentation`` folder.
 
-- Limit lines at 79 characters.
+- Limit lines at 100 characters.
 
   .. note::
 

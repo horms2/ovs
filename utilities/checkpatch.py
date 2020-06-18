@@ -287,8 +287,8 @@ def pointer_whitespace_check(line):
 
 def line_length_check(line):
     """Return TRUE if the line length is too long"""
-    if len(line) > 79:
-        print_warning("Line is %d characters long (recommended limit is 79)"
+    if len(line) > 100:
+        print_warning("Line is %d characters long (recommended limit is 100)"
                       % len(line))
         return True
     return False

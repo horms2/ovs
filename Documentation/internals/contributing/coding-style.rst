@@ -43,7 +43,7 @@ The following GNU indent options approximate this style.
 Basics
 ------
 
-- Limit lines to 79 characters.
+- Limit lines to 100 characters.
 
 - Use form feeds (control+L) to divide long source files into logical pieces. A
   form feed should appear as the only character on a line.
