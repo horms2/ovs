@@ -84,6 +84,13 @@ enum { MAX_PORTS = USHRT_MAX };
 #define EPOLLEXCLUSIVE (1u << 28)
 #endif
 
+/* Protects against changes to 'dp_netlinks'. */
+static struct ovs_mutex dp_netlink_mutex = OVS_MUTEX_INITIALIZER;
+
+/* Contains all 'struct dp_netlink's. */
+static struct shash dp_netlinks OVS_GUARDED_BY(dp_netlink_mutex)
+    = SHASH_INITIALIZER(&dp_netlinks);
+
 struct dpif_netlink_dp {
     /* Generic Netlink header. */
     uint8_t cmd;
@@ -191,6 +198,12 @@ struct dpif_handler {
 #endif
 };
 
+struct dp_netlink {
+    const struct dpif_class *const class;
+    const char *const name;
+    struct ovs_refcount ref_cnt;
+};
+
 /* Datapath interface for the openvswitch Linux kernel module. */
 struct dpif_netlink {
     struct dpif dpif;
@@ -209,6 +222,7 @@ struct dpif_netlink {
     struct nl_sock *port_notifier; /* vport multicast group subscriber. */
     bool refresh_channels;
     struct atomic_count n_offloaded_flows;
+    struct dp_netlink *dp;
 };
 
 static void report_loss(struct dpif_netlink *, struct dpif_channel *,
@@ -295,6 +309,52 @@ dpif_netlink_cast(const struct dpif *dpif)
     return CONTAINER_OF(dpif, struct dpif_netlink, dpif);
 }
 
+static struct dp_netlink *
+get_dp_netlink(const struct dpif *dpif)
+{
+    return dpif_netlink_cast(dpif)->dp;
+}
+
+static int
+create_dp_netlink(const char *name, const struct dpif_class *class,
+                  struct dp_netlink **dpp)
+{
+    struct dp_netlink *dp;
+
+    dp = xzalloc(sizeof *dp);
+    shash_add(&dp_netlinks, name, dp);
+
+    *CONST_CAST(const struct dpif_class **, &dp->class) = class;
+    *CONST_CAST(const char **, &dp->name) = xstrdup(name);
+    ovs_refcount_init(&dp->ref_cnt);
+
+    *dpp = dp;
+
+    return 0;
+}
+
+static void
+dp_netlink_free(struct dp_netlink *dp)
+    OVS_REQUIRES(dp_netlink_mutex)
+{
+    shash_find_and_delete(&dp_netlinks, dp->name);
+
+    free(CONST_CAST(char *, dp->name));
+    free(dp);
+}
+
+static void
+dp_netlink_unref(struct dp_netlink *dp)
+{
+    if (dp) {
+        ovs_mutex_lock(&dp_netlink_mutex);
+        if (ovs_refcount_unref_relaxed(&dp->ref_cnt) == 1) {
+            dp_netlink_free(dp);
+        }
+        ovs_mutex_unlock(&dp_netlink_mutex);
+    }
+}
+
 static int
 dpif_netlink_enumerate(struct sset *all_dps,
                        const struct dpif_class *dpif_class OVS_UNUSED)
@@ -327,6 +387,7 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
                   bool create, struct dpif **dpifp)
 {
     struct dpif_netlink_dp dp_request, dp;
+    struct dp_netlink *dp_netlink;
     struct ofpbuf *buf;
     uint32_t upcall_pid;
     int error;
@@ -365,7 +426,16 @@ dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
         return error;
     }
 
+    ovs_mutex_lock(&dp_netlink_mutex);
+    dp_netlink = shash_find_data(&dp_netlinks, name);
+    if (!dp_netlink) {
+        create_dp_netlink(name, class, &dp_netlink);
+    }
+    ovs_refcount_ref(&dp_netlink->ref_cnt);
+    ovs_mutex_unlock(&dp_netlink_mutex);
+
     error = open_dpif(&dp, dpifp);
+    dpif_netlink_cast(*dpifp)->dp = dp_netlink;
     dpif_netlink_set_features(*dpifp, OVS_DP_F_TC_RECIRC_SHARING);
     ofpbuf_delete(buf);
 
@@ -614,6 +684,7 @@ static void
 dpif_netlink_close(struct dpif *dpif_)
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
+    struct dp_netlink *dp = get_dp_netlink(dpif_);
 
     nl_sock_destroy(dpif->port_notifier);
 
@@ -622,6 +693,7 @@ dpif_netlink_close(struct dpif *dpif_)
     fat_rwlock_unlock(&dpif->upcall_lock);
 
     fat_rwlock_destroy(&dpif->upcall_lock);
+    dp_netlink_unref(dp);
     free(dpif);
 }
 
