@@ -202,6 +202,8 @@ struct dp_netlink {
     const struct dpif_class *const class;
     const char *const name;
     struct ovs_refcount ref_cnt;
+
+    struct atomic_count n_offloaded_flows;
 };
 
 /* Datapath interface for the openvswitch Linux kernel module. */
@@ -221,7 +223,6 @@ struct dpif_netlink {
     /* Change notification. */
     struct nl_sock *port_notifier; /* vport multicast group subscriber. */
     bool refresh_channels;
-    struct atomic_count n_offloaded_flows;
     struct dp_netlink *dp;
 };
 
@@ -752,7 +753,7 @@ dpif_netlink_get_stats(const struct dpif *dpif_, struct dpif_dp_stats *stats)
         }
         ofpbuf_delete(buf);
     }
-    stats->n_offloaded_flows = atomic_count_get(&dpif->n_offloaded_flows);
+    stats->n_offloaded_flows = atomic_count_get(&dpif->dp->n_offloaded_flows);
     return error;
 }
 
@@ -1205,6 +1206,7 @@ dpif_netlink_flow_flush(struct dpif *dpif_)
 
     if (netdev_is_flow_api_enabled()) {
         netdev_ports_flow_flush(dpif_type_str);
+        atomic_count_set(&dpif->dp->n_offloaded_flows, 0);
     }
 
     return dpif_netlink_flow_transact(&flow, NULL, NULL);
@@ -2253,6 +2255,7 @@ out:
 static int
 try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
 {
+    struct dp_netlink *dp = dpif->dp;
     int err = EOPNOTSUPP;
 
     switch (op->type) {
@@ -2265,7 +2268,7 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
 
         err = parse_flow_put(dpif, put);
         if (!err && (put->flags & DPIF_FP_CREATE)) {
-            atomic_count_inc(&dpif->n_offloaded_flows);
+            atomic_count_inc(&dp->n_offloaded_flows);
         }
         log_flow_put_message(&dpif->dpif, &this_module, put, 0);
         break;
@@ -2282,7 +2285,7 @@ try_send_to_netdev(struct dpif_netlink *dpif, struct dpif_op *op)
                                 del->ufid,
                                 del->stats);
         if (!err) {
-            atomic_count_dec(&dpif->n_offloaded_flows);
+            atomic_count_dec(&dp->n_offloaded_flows);
         }
         log_flow_del_message(&dpif->dpif, &this_module, del, 0);
         break;
