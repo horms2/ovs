@@ -1802,6 +1802,17 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         }
     }
 
+    if (flower.rewrite.rewrite) {
+        if (flower.rewrite.mask.tcp_src || flower.rewrite.mask.tcp_dst ||
+            flower.rewrite.mask.udp_src || flower.rewrite.mask.udp_dst ||
+            !is_all_zeros(&flower.rewrite.mask.ipv4,
+                          sizeof(flower.rewrite.mask.ipv4)) ||
+            !is_all_zeros(&flower.rewrite.mask.ipv6,
+                          sizeof(flower.rewrite.mask.ipv6))) {
+            flower.mask.ip_proto = UINT8_MAX;
+        }
+    }
+
     if ((chain || recirc_act) && !info->recirc_id_shared_with_tc) {
         VLOG_ERR_RL(&error_rl, "flow_put: recirc_id sharing not supported");
         return EOPNOTSUPP;
