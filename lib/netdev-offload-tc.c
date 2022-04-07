@@ -150,6 +150,8 @@ static struct netlink_field set_flower_map[][4] = {
     },
 };
 
+static int meter_id_lookup(uint32_t meter_id, uint32_t *police_idx);
+
 static struct ovs_mutex ufid_lock = OVS_MUTEX_INITIALIZER;
 
 /**
@@ -1019,7 +1021,8 @@ parse_tc_flower_to_match(struct tc_flower *flower,
             }
             break;
             case TC_ACT_POLICE: {
-                /* Not supported yet */
+                nl_msg_put_u32(buf, OVS_ACTION_ATTR_METER,
+                               action->police.meter_id);
             }
             break;
             }
@@ -1941,6 +1944,17 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
         } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_DROP) {
             action->type = TC_ACT_GOTO;
             action->chain = 0;  /* 0 is reserved and not used by recirc. */
+            flower.action_count++;
+        } else if (nl_attr_type(nla) == OVS_ACTION_ATTR_METER) {
+            uint32_t police_index;
+
+            action->type = TC_ACT_POLICE;
+            action->police.meter_id = nl_attr_get_u32(nla);
+            if (meter_id_lookup(action->police.meter_id, &police_index)) {
+                return EOPNOTSUPP;
+            }
+
+            action->police.index = police_index;
             flower.action_count++;
         } else {
             VLOG_DBG_RL(&rl, "unsupported put action type: %d",
