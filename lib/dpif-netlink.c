@@ -351,6 +351,16 @@ dpif_netlink_enumerate(struct sset *all_dps,
 }
 
 static int
+dpif_netlink_initialize(void)
+{
+    if (netdev_is_flow_api_enabled()) {
+        meter_offload_init("tc_police");
+    }
+
+    return 0;
+}
+
+static int
 dpif_netlink_open(const struct dpif_class *class OVS_UNUSED, const char *name,
                   bool create, struct dpif **dpifp)
 {
@@ -732,6 +742,10 @@ dpif_netlink_destroy(struct dpif *dpif_)
 {
     struct dpif_netlink *dpif = dpif_netlink_cast(dpif_);
     struct dpif_netlink_dp dp;
+
+    if (netdev_is_flow_api_enabled()) {
+        meter_offload_destroy("tc_police");
+    }
 
     dpif_netlink_dp_init(&dp);
     dp.cmd = OVS_DP_CMD_DEL;
@@ -4163,11 +4177,18 @@ static int
 dpif_netlink_meter_set(struct dpif *dpif_, ofproto_meter_id meter_id,
                        struct ofputil_meter_config *config)
 {
+    int err;
+
     if (probe_broken_meters(dpif_)) {
         return ENOMEM;
     }
 
-    return dpif_netlink_meter_set__(dpif_, meter_id, config);
+    err = dpif_netlink_meter_set__(dpif_, meter_id, config);
+    if (!err && netdev_is_flow_api_enabled()) {
+        meter_offload_set("tc_police", meter_id, config);
+    }
+
+    return err;
 }
 
 /* Retrieve statistics and/or delete meter 'meter_id'.  Statistics are
@@ -4258,16 +4279,30 @@ static int
 dpif_netlink_meter_get(const struct dpif *dpif, ofproto_meter_id meter_id,
                        struct ofputil_meter_stats *stats, uint16_t max_bands)
 {
-    return dpif_netlink_meter_get_stats(dpif, meter_id, stats, max_bands,
-                                        OVS_METER_CMD_GET);
+    int err;
+
+    err = dpif_netlink_meter_get_stats(dpif, meter_id, stats, max_bands,
+                                       OVS_METER_CMD_GET);
+    if (!err && netdev_is_flow_api_enabled()) {
+        meter_offload_get("tc_police", meter_id, stats, max_bands);
+    }
+
+    return err;
 }
 
 static int
 dpif_netlink_meter_del(struct dpif *dpif, ofproto_meter_id meter_id,
                        struct ofputil_meter_stats *stats, uint16_t max_bands)
 {
-    return dpif_netlink_meter_get_stats(dpif, meter_id, stats, max_bands,
-                                        OVS_METER_CMD_DEL);
+    int err;
+
+    err  = dpif_netlink_meter_get_stats(dpif, meter_id, stats,
+                                        max_bands, OVS_METER_CMD_DEL);
+    if (!err && netdev_is_flow_api_enabled()) {
+        meter_offload_del("tc_police", meter_id, stats, max_bands);
+    }
+
+    return err;
 }
 
 static bool
@@ -4416,7 +4451,7 @@ dpif_netlink_cache_set_size(struct dpif *dpif_, uint32_t level, uint32_t size)
 const struct dpif_class dpif_netlink_class = {
     "system",
     false,                      /* cleanup_required */
-    NULL,                       /* init */
+    dpif_netlink_initialize,    /* init */
     dpif_netlink_enumerate,
     NULL,
     dpif_netlink_open,
