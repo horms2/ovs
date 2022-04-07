@@ -195,6 +195,125 @@ netdev_assign_flow_api(struct netdev *netdev)
     return -1;
 }
 
+/* Protects 'meter_offload_apis'.  */
+static struct ovs_mutex meter_offload_api_provider_mtx = OVS_MUTEX_INITIALIZER;
+
+/* Contains 'struct meter_registered_offload_api's. */
+static struct cmap meter_offload_apis = CMAP_INITIALIZER;
+
+struct meter_registered_offload_api {
+    /* In 'meter_offload_apis', by meter_offload_api->type. */
+    struct cmap_node cmap_node;
+    const struct meter_offload_api *meter_api;
+};
+
+static struct meter_registered_offload_api *
+meter_lookup_offload_api(const char *type)
+{
+    struct meter_registered_offload_api *r;
+    CMAP_FOR_EACH_WITH_HASH (r, cmap_node, hash_string(type, 0),
+                             &meter_offload_apis) {
+        if (!strcmp(type, r->meter_api->type)) {
+            return r;
+        }
+    }
+    return NULL;
+}
+
+int
+meter_register_offload_api_provider(const struct meter_offload_api *new_api)
+    OVS_EXCLUDED(meter_offload_api_provider_mtx)
+{
+    int error = 0;
+
+    ovs_mutex_lock(&meter_offload_api_provider_mtx);
+    if (meter_lookup_offload_api(new_api->type)) {
+        VLOG_WARN("fail to register duplicate meter offload api provider: %s",
+                   new_api->type);
+        error = EEXIST;
+    } else {
+        struct meter_registered_offload_api *r;
+
+        r = xmalloc(sizeof *r);
+        cmap_insert(&meter_offload_apis, &r->cmap_node,
+                    hash_string(new_api->type, 0));
+        r->meter_api = new_api;
+        VLOG_DBG("meter offload API '%s' registered.", new_api->type);
+    }
+    ovs_mutex_unlock(&meter_offload_api_provider_mtx);
+
+    return error;
+}
+
+static const struct meter_offload_api *
+meter_offload_get_api(const char *type)
+    OVS_EXCLUDED(meter_offload_api_provider_mtx)
+{
+    struct meter_registered_offload_api *r;
+
+    ovs_mutex_lock(&meter_offload_api_provider_mtx);
+    r = meter_lookup_offload_api(type);
+    ovs_mutex_unlock(&meter_offload_api_provider_mtx);
+
+    return r ? r->meter_api : NULL;
+}
+
+int
+meter_offload_set(const char *type, ofproto_meter_id meter_id,
+                  struct ofputil_meter_config *config)
+{
+    const struct meter_offload_api *meter_api;
+
+    meter_api = meter_offload_get_api(type);
+
+    return meter_api ? meter_api->meter_offload_set(meter_id, config)
+                     : EOPNOTSUPP;
+}
+
+int
+meter_offload_get(const char *type, ofproto_meter_id meter_id,
+                  struct ofputil_meter_stats *stats, uint16_t max_bands)
+{
+    const struct meter_offload_api *meter_api;
+
+    meter_api = meter_offload_get_api(type);
+
+    return meter_api ? meter_api->meter_offload_get(meter_id, stats, max_bands)
+                     : EOPNOTSUPP;
+}
+
+int
+meter_offload_del(const char *type, ofproto_meter_id meter_id,
+                  struct ofputil_meter_stats *stats, uint16_t max_bands)
+{
+    const struct meter_offload_api *meter_api;
+
+    meter_api = meter_offload_get_api(type);
+
+    return meter_api ? meter_api->meter_offload_del(meter_id, stats, max_bands)
+                     : EOPNOTSUPP;
+}
+
+int
+meter_offload_init(const char *type)
+{
+    const struct meter_offload_api *meter_api;
+
+    meter_api = meter_offload_get_api(type);
+
+    return meter_api ? meter_api->meter_offload_init() : EOPNOTSUPP;
+}
+
+int
+meter_offload_destroy(const char *type)
+{
+    const struct meter_offload_api *meter_api;
+
+    meter_api = meter_offload_get_api(type);
+
+    return meter_api ? meter_api->meter_offload_destroy() : EOPNOTSUPP;
+}
+
 int
 netdev_flow_flush(struct netdev *netdev)
 {

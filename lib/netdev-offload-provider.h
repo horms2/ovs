@@ -102,9 +102,25 @@ struct netdev_flow_api {
     void (*uninit_flow_api)(struct netdev *);
 };
 
+struct meter_offload_api {
+    char *type;
+    int (*meter_offload_init)(void);
+    int (*meter_offload_destroy)(void);
+    int (*meter_offload_set)(ofproto_meter_id meter_id,
+                             struct ofputil_meter_config *config);
+    int (*meter_offload_get)(ofproto_meter_id meter_id,
+                             struct ofputil_meter_stats *stats,
+                             uint16_t max_bands);
+    int (*meter_offload_del)(ofproto_meter_id meter_id,
+                             struct ofputil_meter_stats *stats,
+                             uint16_t max_bands);
+};
+
 int netdev_register_flow_api_provider(const struct netdev_flow_api *);
 int netdev_unregister_flow_api_provider(const char *type);
 bool netdev_flow_api_equals(const struct netdev *, const struct netdev *);
+
+int meter_register_offload_api_provider(const struct meter_offload_api *);
 
 #ifdef __linux__
 extern const struct netdev_flow_api netdev_offload_tc;
