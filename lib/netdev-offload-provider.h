@@ -124,6 +124,7 @@ int meter_register_offload_api_provider(const struct meter_offload_api *);
 
 #ifdef __linux__
 extern const struct netdev_flow_api netdev_offload_tc;
+extern const struct meter_offload_api meter_offload_tc;
 #endif
 
 #ifdef DPDK_NETDEV

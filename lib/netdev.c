@@ -152,6 +152,7 @@ netdev_initialize(void)
         netdev_vport_tunnel_register();
 
         netdev_register_flow_api_provider(&netdev_offload_tc);
+        meter_register_offload_api_provider(&meter_offload_tc);
 #ifdef HAVE_AF_XDP
         netdev_register_provider(&netdev_afxdp_class);
         netdev_register_provider(&netdev_afxdp_nonpmd_class);
