@@ -196,6 +196,51 @@ netdev_assign_flow_api(struct netdev *netdev)
 }
 
 int
+meter_offload_set(ofproto_meter_id meter_id,
+                  struct ofputil_meter_config *config)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_set) {
+            rfa->flow_api->meter_set(meter_id, config);
+        }
+    }
+
+    return 0;
+}
+
+int
+meter_offload_get(ofproto_meter_id meter_id,
+                  struct ofputil_meter_stats *stats, uint16_t max_bands)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_get) {
+            rfa->flow_api->meter_get(meter_id, stats, max_bands);
+        }
+    }
+
+    return 0;
+}
+
+int
+meter_offload_del(ofproto_meter_id meter_id,
+                  struct ofputil_meter_stats *stats, uint16_t max_bands)
+{
+    struct netdev_registered_flow_api *rfa;
+
+    CMAP_FOR_EACH (rfa, cmap_node, &netdev_flow_apis) {
+        if (rfa->flow_api->meter_del) {
+            rfa->flow_api->meter_del(meter_id, stats, max_bands);
+        }
+    }
+
+    return 0;
+}
+
+int
 netdev_flow_flush(struct netdev *netdev)
 {
     const struct netdev_flow_api *flow_api =

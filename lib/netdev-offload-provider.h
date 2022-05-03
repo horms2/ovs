@@ -94,6 +94,21 @@ struct netdev_flow_api {
      * takes ownership of a packet if errno != EOPNOTSUPP. */
     int (*hw_miss_packet_recover)(struct netdev *, struct dp_packet *);
 
+    /* Offloads the meter or modifies it if exists in HW
+     * with the given 'meter_id' and the configuration in 'config'. */
+    int (*meter_set)(ofproto_meter_id meter_id,
+                     struct ofputil_meter_config *config);
+
+    /* Queries HW for meter stats with the given 'meter_id'. */
+    int (*meter_get)(ofproto_meter_id meter_id,
+                     struct ofputil_meter_stats *stats,
+                     uint16_t max_bands);
+
+    /* Removes meter 'meter_id' from HW. */
+    int (*meter_del)(ofproto_meter_id meter_id,
+                     struct ofputil_meter_stats *stats,
+                     uint16_t max_bands);
+
     /* Initializies the netdev flow api.
      * Return 0 if successful, otherwise returns a positive errno value. */
     int (*init_flow_api)(struct netdev *);
