@@ -382,5 +382,7 @@ int parse_netlink_to_tc_chain(struct ofpbuf *reply, uint32_t *chain);
 void tc_set_policy(const char *policy);
 int tc_parse_single_action(struct nlattr *action, struct tc_flower *flower,
                            bool terse);
+int tc_dump_tc_action_start(char *name, struct nl_dump *dump);
+int parse_netlink_to_tc_policer(struct ofpbuf *reply, uint32_t police_idx[]);
 
 #endif /* tc.h */
