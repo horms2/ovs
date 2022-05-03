@@ -168,3 +168,15 @@ matchall
 ])
 OVS_TRAFFIC_VSWITCHD_STOP
 AT_CLEANUP
+
+AT_SETUP([offloads - check if meter is offloaded ])
+AT_KEYWORDS([meter])
+AT_SKIP_IF([test $HAVE_TC = "no"])
+OVS_TRAFFIC_VSWITCHD_START()
+
+AT_CHECK([ovs-vsctl set Open_vSwitch . other_config:hw-offload=true])
+AT_CHECK([ovs-ofctl -O OpenFlow13 add-meter br0 'meter=1 pktps bands=type=drop rate=1'])
+AT_CHECK([test `tc action list action police | grep 'police 0x10000000' | wc -l` -eq 1 ])
+
+OVS_TRAFFIC_VSWITCHD_STOP
+AT_CLEANUP
